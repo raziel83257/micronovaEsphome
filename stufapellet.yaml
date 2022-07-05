@@ -1,0 +1,177 @@
+substitutions:
+  esphome_name: stufapellet
+
+esphome:
+  name: ${esphome_name}
+  platform: ESP8266
+  board: d1_mini
+  includes:
+    - stoveserial.h
+
+ota:
+  password: "xxxxxxxxxxxxxxxxxxxxxx"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  domain: .home.lan
+logger:
+  level: DEBUG
+  baud_rate: 0
+  
+time:
+  - platform: homeassistant
+api:
+
+globals:
+  - id: g_stoveOnOff
+    type: std::string
+  - id: g_stoveState
+    type: int
+  - id: g_ambTemp
+    type: float
+  - id: g_fumesTemp
+    type: int
+  - id: g_speedFanFumes
+    type: int
+  - id: g_flamePower
+    type: int
+    
+mqtt:
+  broker: !secret mqtt_broker
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+  discovery: False
+  
+  on_json_message:
+      topic: micronova/json
+      then:
+        - lambda: |-
+            id(g_stoveState) = x["stoveState"];
+            id(g_ambTemp) = x["ambTemp"];
+            id(g_fumesTemp) = x["fumesTemp"];
+            id(g_speedFanFumes) = x["speedFanFumes"];
+            id(g_flamePower) = x["flamePower"];
+  #          id(StovePower).value = static_cast< float >(id(g_flamePower));
+  #                  const char *fumes Temp = x["fumesTemp"];
+  #                  const char *ambTemp = x["ambTemp"];
+  #                if (x.containsKey("stoveState")){
+  #                  ESP_LOGD("stoveState", "Value of my sensor: %s", id(stoveState).c_str());
+  #                } 
+uart:
+  id: uart_bus
+  rx_pin: D3
+  tx_pin: D4
+  baud_rate: 1200
+  data_bits: 8
+  parity: NONE
+  stop_bits: 2
+
+switch:
+  - platform: template
+    id: SW_ON_OFF
+    retain: false
+    name: ${esphome_name}SW_ON_OFF
+    icon: mdi:fire
+    turn_on_action:
+      then:
+        - mqtt.publish:
+            topic: "micronova/intopic"
+            payload: "ON"
+            qos: 0
+    turn_off_action:
+      then:
+        - mqtt.publish:
+            topic: "micronova/intopic"
+            payload: "OFF"
+            qos: 0
+    lambda: |-
+      int ret = 0;
+      int val = id(g_stoveState);
+      if ((val>0)&(val<6)){ret=1;}
+      return ret;
+     
+custom_component:
+  - lambda: |-
+      auto my_sensor = new StoveSensor(id(uart_bus),"micronova");
+      App.register_component(my_sensor);
+      return {my_sensor};
+sensor:
+  - platform: template
+    name: ${esphome_name}fumesTemp
+    lambda: |-
+        return {id(g_fumesTemp)};
+    unit_of_measurement: °C
+    accuracy_decimals: 0
+    icon: mdi:thermometer
+    update_interval: 5s
+  - platform: template
+    id: StoveAmbTemp
+    name: ${esphome_name}ambTemp
+    unit_of_measurement: °C
+    accuracy_decimals: 1
+    lambda: |-
+      return {id(g_ambTemp)};
+    update_interval: 5s
+    icon: mdi:thermometer
+  - platform: template
+    name: ${esphome_name}fumespeed
+    accuracy_decimals: 0
+    lambda: |-
+      return {id(g_speedFanFumes)};
+    update_interval: 5s
+    icon: mdi:fan
+  - platform: template
+    name: ${esphome_name}flamepower
+    accuracy_decimals: 0
+    lambda: |-
+      return {id(g_flamePower)};
+    update_interval: 5s
+    icon: mdi:fire
+    
+text_sensor:
+  - platform: template
+    name: ${esphome_name}State
+    lambda: |-
+      std::string ret = "";
+      int val = id(g_stoveState);
+      if (0==val){ret="Off";}
+      else if (1==val){ret="Starting";}
+      else if (2==val){ret="Pellet loading";}
+      else if (3==val){ret="Ignition";}
+      else if (4==val){ret="Working";}
+      else if (5==val){ret="Brazier cleaning";}
+      else if (6==val){ret="Final cleaning";}
+      else if (7==val){ret="Standby";}
+      else if (8==val){ret="Pellet missing";}
+      else if (9==val){ret="Ignition failure";}
+      else if (10==val){ret="Alarm";}
+      return {ret};
+    update_interval: 10s
+    icon: mdi:fire-alert
+
+number:
+  - platform: template
+    icon: mdi:fire
+    optimistic: true
+    name: "StovePower"
+    id: StovePower
+    step: 1
+    min_value: 1
+    max_value: 5
+    set_action:
+      then:
+        - mqtt.publish:
+            topic: "micronova/intopic"
+            payload: !lambda >-
+                char buff[6];
+                snprintf (buff, sizeof(buff), "%f", x);
+                std::string val = "WRITE_1_127-";
+                val +=buff[0];
+                ESP_LOGI("main", "%s", val.c_str());
+                return val;
+#              std::string val = (static_cast<int>(x)).c_str();
+#              ESP_LOGI("main", "The current version is %s", val);
+
+#              return 'WRITE_1_127-'+esphome::to_string (x);"
+            qos: 0
