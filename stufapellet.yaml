@@ -9,12 +9,12 @@ esphome:
     - stoveserial.h
 
 ota:
-  password: "xxxxxxxxxxxxxxxxxxxxxx"
+  password: "xxxxxxxxxxx"
 
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  domain: .home.lan
+  domain: .xxx.xxx
 logger:
   level: DEBUG
   baud_rate: 0
